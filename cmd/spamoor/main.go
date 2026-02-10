@@ -19,19 +19,20 @@ import (
 )
 
 type CliArgs struct {
-	verbose          bool
-	trace            bool
-	rpchosts         []string
-	rpchostsFile     string
-	privkey          string
-	seed             string
-	refillAmount     uint64
-	refillBalance    uint64
-	refillAmountWei  string
-	refillBalanceWei string
-	refillInterval   uint64
-	slotDuration     time.Duration
-	fundingGasLimit  uint64
+	verbose                bool
+	trace                  bool
+	rpchosts               []string
+	rpchostsFile           string
+	privkey                string
+	seed                   string
+	refillAmount           uint64
+	refillBalance          uint64
+	refillAmountWei        string
+	refillBalanceWei       string
+	refillInterval         uint64
+	slotDuration           time.Duration
+	fundingGasLimit        uint64
+	disableBlockProcessing bool
 }
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 	flags.Uint64Var(&cliArgs.refillInterval, "refill-interval", 300, "Interval for child wallet rbalance check and refilling if needed (in sec).")
 	flags.DurationVar(&cliArgs.slotDuration, "slot-duration", 12*time.Second, "Duration of a slot/block for rate limiting (e.g., '12s', '250ms'). Use sub-second values for L2 chains.")
 	flags.Uint64Var(&cliArgs.fundingGasLimit, "funding-gas-limit", 21000, "Gas limit for wallet funding transactions (use 100000+ for L2s).")
+	flags.BoolVar(&cliArgs.disableBlockProcessing, "disable-block-processing", false, "Disable block processing (no receipt fetching, no tx confirmation tracking). Use with --skip-receipts for fire-and-forget mode.")
 
 	flags.Parse(os.Args)
 
@@ -156,10 +158,11 @@ func main() {
 
 	// prepare txpool
 	txpool := spamoor.NewTxPool(&spamoor.TxPoolOptions{
-		Context:    ctx,
-		Logger:     logger.WithField("module", "txpool"),
-		ClientPool: clientPool,
-		ChainId:    clientPool.GetChainId(),
+		Context:                ctx,
+		Logger:                 logger.WithField("module", "txpool"),
+		ClientPool:             clientPool,
+		ChainId:                clientPool.GetChainId(),
+		DisableBlockProcessing: cliArgs.disableBlockProcessing,
 	})
 
 	// init root wallet

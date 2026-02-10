@@ -126,12 +126,13 @@ type txPoolWalletRegistration struct {
 
 // TxPoolOptions contains configuration options for the transaction pool.
 type TxPoolOptions struct {
-	Context             context.Context
-	Logger              *logrus.Entry
-	ClientPool          *ClientPool
-	ReorgDepth          int // Number of blocks to keep in memory for reorg tracking
-	ChainId             *big.Int
-	ExternalBlockSource *ExternalBlockSource
+	Context                context.Context
+	Logger                 *logrus.Entry
+	ClientPool             *ClientPool
+	ReorgDepth             int // Number of blocks to keep in memory for reorg tracking
+	ChainId                *big.Int
+	ExternalBlockSource    *ExternalBlockSource
+	DisableBlockProcessing bool // Disable block processing loop (no receipt fetching, no confirmation tracking)
 }
 
 type ExternalBlockSource struct {
@@ -170,10 +171,18 @@ func NewTxPool(options *TxPoolOptions) *TxPool {
 		pool.reorgDepth = options.ReorgDepth
 	}
 
-	go pool.runTxPoolLoop()
-	go pool.processStaleTransactionsLoop()
+	// Skip block processing and stale tx handling when disabled (fire-and-forget mode)
+	if !options.DisableBlockProcessing {
+		go pool.runTxPoolLoop()
+		go pool.processStaleTransactionsLoop()
+	}
 
 	return pool
+}
+
+// IsBlockProcessingDisabled returns true if block processing is disabled for this pool.
+func (pool *TxPool) IsBlockProcessingDisabled() bool {
+	return pool.options.DisableBlockProcessing
 }
 
 // RegisterWallet registers a wallet with the transaction pool.
