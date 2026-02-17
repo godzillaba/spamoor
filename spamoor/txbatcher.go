@@ -131,7 +131,7 @@ func NewTxBatcher(txpool *TxPool) *TxBatcher {
 //   - ctx: context for the deployment transaction
 //   - wallet: wallet to deploy the contract from
 //   - client: optional client to use (if nil, uses pool's default client)
-//   - gasLimit: gas limit override for the deploy tx (uses 300000 if 0)
+//   - gasLimit: gas limit override for the deploy tx (uses 300000 if lower)
 //   - gasPrice: gas price override for feeCap/tipCap (uses defaults if nil)
 func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client, gasLimit uint64, gasPrice *big.Int) error {
 	b.deployMtx.Lock()

@@ -225,6 +225,9 @@ func main() {
 		panic(fmt.Errorf("failed to prepare wallets: %v", err))
 	}
 
+	logger.Infof("wallets prepared, exiting before scenario run")
+	return
+
 	// start scenario
 	err = newScenario.Run(ctx)
 	if err != nil {

@@ -899,13 +899,15 @@ func (pool *WalletPool) processFundingRequests(fundingReqs []*FundingRequest) er
 		if len(fundingReqs)%BatcherTxLimit != 0 {
 			batchTxCount++
 		}
-		if batchTxCount > 1 {
-			feeAmount = big.NewInt(0).Mul(feeAmount, big.NewInt(int64((BatcherBaseGas+BatcherGasPerTx*BatcherTxLimit)*batchTxCount)))
+		if pool.config.FundingGasLimit > 0 {
+			feeAmount = big.NewInt(0).Mul(feeAmount, big.NewInt(int64(pool.config.FundingGasLimit*uint64(batchTxCount))))
+		} else if batchTxCount > 1 {
+			feeAmount = big.NewInt(0).Mul(feeAmount, big.NewInt(int64((BatcherBaseGas+BatcherGasPerTx*BatcherTxLimit)*uint64(batchTxCount))))
 		} else {
 			feeAmount = big.NewInt(0).Mul(feeAmount, big.NewInt(int64(BatcherBaseGas+BatcherGasPerTx*uint64(reqTxCount))))
 		}
 	} else {
-		feeAmount = big.NewInt(0).Mul(feeAmount, big.NewInt(int64(reqTxCount*21000)))
+		feeAmount = big.NewInt(0).Mul(feeAmount, big.NewInt(int64(uint64(reqTxCount)*pool.GetFundingGasLimit())))
 	}
 
 	totalFundingAmount = totalFundingAmount.Add(totalFundingAmount, uint256.MustFromBig(feeAmount))
@@ -1029,11 +1031,16 @@ func (pool *WalletPool) buildWalletFundingBatchTx(requests []*FundingRequest, cl
 		return nil, err
 	}
 
+	batchGasLimit := BatcherBaseGas + BatcherGasPerTx*uint64(len(requests))
+	if pool.config.FundingGasLimit > 0 {
+		batchGasLimit = pool.config.FundingGasLimit
+	}
+
 	toAddr := batcher.GetAddress()
 	refillTx, err := txbuilder.DynFeeTx(&txbuilder.TxMetadata{
 		GasFeeCap: uint256.MustFromBig(feeCap),
 		GasTipCap: uint256.MustFromBig(tipCap),
-		Gas:       BatcherBaseGas + BatcherGasPerTx*uint64(len(requests)),
+		Gas:       batchGasLimit,
 		To:        &toAddr,
 		Value:     totalAmount,
 		Data:      batchData,
