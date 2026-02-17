@@ -171,11 +171,11 @@ func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client, 
 	if err != nil {
 		return err
 	}
-	if feeCap.Cmp(big.NewInt(400000000000)) < 0 {
-		feeCap = big.NewInt(400000000000)
+	if feeCap.Cmp(big.NewInt(400000000)) < 0 {
+		feeCap = big.NewInt(400000000)
 	}
-	if tipCap.Cmp(big.NewInt(200000000000)) < 0 {
-		tipCap = big.NewInt(200000000000)
+	if tipCap.Cmp(big.NewInt(200000000)) < 0 {
+		tipCap = big.NewInt(200000000)
 	}
 
 	txData, err := txbuilder.DynFeeTx(&txbuilder.TxMetadata{
