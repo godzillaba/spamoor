@@ -93,6 +93,10 @@ type TxPool struct {
 	processStaleChan chan uint64
 	lastBlockNumber  uint64
 
+	// Block processing loop control
+	blockProcessingCtx    context.Context
+	blockProcessingCancel context.CancelFunc
+
 	// wallet and wallet pool tracking
 	walletsMutex sync.RWMutex
 	wallets      map[common.Address]*txPoolWalletRegistration
@@ -171,11 +175,11 @@ func NewTxPool(options *TxPoolOptions) *TxPool {
 		pool.reorgDepth = options.ReorgDepth
 	}
 
-	// Skip block processing and stale tx handling when disabled (fire-and-forget mode)
-	if !options.DisableBlockProcessing {
-		go pool.runTxPoolLoop()
-		go pool.processStaleTransactionsLoop()
-	}
+	pool.blockProcessingCtx, pool.blockProcessingCancel = context.WithCancel(options.Context)
+
+	// Always start block processing loops (they can be stopped later via StopBlockProcessing)
+	go pool.runTxPoolLoop()
+	go pool.processStaleTransactionsLoop()
 
 	return pool
 }
@@ -183,6 +187,13 @@ func NewTxPool(options *TxPoolOptions) *TxPool {
 // IsBlockProcessingDisabled returns true if block processing is disabled for this pool.
 func (pool *TxPool) IsBlockProcessingDisabled() bool {
 	return pool.options.DisableBlockProcessing
+}
+
+// StopBlockProcessing stops the block processing loops.
+// Use this to disable block processing after wallet funding is complete.
+func (pool *TxPool) StopBlockProcessing() {
+	pool.options.DisableBlockProcessing = true
+	pool.blockProcessingCancel()
 }
 
 // RegisterWallet registers a wallet with the transaction pool.
@@ -303,7 +314,7 @@ func (pool *TxPool) runTxPoolLoop() {
 			}
 
 			select {
-			case <-pool.options.Context.Done():
+			case <-pool.blockProcessingCtx.Done():
 				return
 			case pool.processStaleChan <- highestBlockNumber:
 			default:
@@ -311,7 +322,7 @@ func (pool *TxPool) runTxPoolLoop() {
 		}
 
 		select {
-		case <-pool.options.Context.Done():
+		case <-pool.blockProcessingCtx.Done():
 			return
 		case <-time.After(3 * time.Second):
 		}
@@ -327,7 +338,7 @@ func (pool *TxPool) runExternalBlockSourceLoop() {
 	highestBlockNumber := uint64(0)
 	for {
 		select {
-		case <-pool.options.Context.Done():
+		case <-pool.blockProcessingCtx.Done():
 			return
 		case blockEvent := <-blockChan:
 
@@ -362,7 +373,7 @@ func (pool *TxPool) runExternalBlockSourceLoop() {
 				}
 
 				select {
-				case <-pool.options.Context.Done():
+				case <-pool.blockProcessingCtx.Done():
 					return
 				case pool.processStaleChan <- highestBlockNumber:
 				default:
@@ -382,7 +393,7 @@ func (pool *TxPool) processStaleTransactionsLoop() {
 
 	for {
 		select {
-		case <-pool.options.Context.Done():
+		case <-pool.blockProcessingCtx.Done():
 			return
 		case blockNumber := <-pool.processStaleChan:
 			for _, wallet := range pool.getWalletMap() {

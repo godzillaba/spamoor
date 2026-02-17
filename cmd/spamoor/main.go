@@ -158,11 +158,10 @@ func main() {
 
 	// prepare txpool
 	txpool := spamoor.NewTxPool(&spamoor.TxPoolOptions{
-		Context:                ctx,
-		Logger:                 logger.WithField("module", "txpool"),
-		ClientPool:             clientPool,
-		ChainId:                clientPool.GetChainId(),
-		DisableBlockProcessing: cliArgs.disableBlockProcessing,
+		Context:    ctx,
+		Logger:     logger.WithField("module", "txpool"),
+		ClientPool: clientPool,
+		ChainId:    clientPool.GetChainId(),
 	})
 
 	// init root wallet
@@ -217,6 +216,11 @@ func main() {
 	err = walletPool.PrepareWallets()
 	if err != nil {
 		panic(fmt.Errorf("failed to prepare wallets: %v", err))
+	}
+
+	// Disable block processing after wallets are funded
+	if cliArgs.disableBlockProcessing {
+		txpool.StopBlockProcessing()
 	}
 
 	// start scenario
