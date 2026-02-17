@@ -880,7 +880,7 @@ func (pool *WalletPool) processFundingRequests(fundingReqs []*FundingRequest) er
 		pool.logger.Infof("root wallet is locked, %s", reason)
 	}, func() error {
 		if batcher != nil {
-			err := batcher.Deploy(pool.ctx, pool.rootWallet.wallet, client)
+			err := batcher.Deploy(pool.ctx, pool.rootWallet.wallet, client, pool.GetFundingGasLimit())
 			if err != nil {
 				return fmt.Errorf("failed to deploy batcher: %v", err)
 			}
