@@ -131,7 +131,8 @@ func NewTxBatcher(txpool *TxPool) *TxBatcher {
 //   - ctx: context for the deployment transaction
 //   - wallet: wallet to deploy the contract from
 //   - client: optional client to use (if nil, uses pool's default client)
-func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client) error {
+//   - gasLimit: gas limit override for the deploy tx (uses 300000 if 0)
+func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client, gasLimit uint64) error {
 	b.deployMtx.Lock()
 	defer b.deployMtx.Unlock()
 
@@ -140,6 +141,11 @@ func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client) 
 	}
 
 	b.isDeployed = true
+
+	deployGasLimit := uint64(300000)
+	if gasLimit > deployGasLimit {
+		deployGasLimit = gasLimit
+	}
 
 	compiler := geas.NewCompiler(nil)
 
@@ -175,7 +181,7 @@ func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client) 
 	txData, err := txbuilder.DynFeeTx(&txbuilder.TxMetadata{
 		GasFeeCap: uint256.MustFromBig(feeCap),
 		GasTipCap: uint256.MustFromBig(tipCap),
-		Gas:       300000,
+		Gas:       deployGasLimit,
 		To:        nil,
 		Value:     uint256.NewInt(0),
 		Data:      deployData,
