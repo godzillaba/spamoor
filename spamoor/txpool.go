@@ -1119,7 +1119,17 @@ func (pool *TxPool) submitTransaction(ctx context.Context, wallet *Wallet, tx *t
 // It uses the wallet's nonce channel system to wait for confirmation and
 // handles cases where the transaction might be replaced or reorged.
 // The wg parameter is signaled when confirmation tracking is set up.
+// When block processing is disabled, returns immediately (fire-and-forget mode).
 func (pool *TxPool) awaitTransaction(ctx context.Context, wallet *Wallet, tx *types.Transaction, options *SendTransactionOptions, wg *sync.WaitGroup) (*types.Receipt, error) {
+	// When block processing is disabled, don't wait for confirmation.
+	// Nonce channels would never be signaled, so skip tracking entirely.
+	if pool.options.DisableBlockProcessing {
+		if wg != nil {
+			wg.Done()
+		}
+		return nil, nil
+	}
+
 	txHash := tx.Hash()
 	nonceChan, isFirstPendingTx := wallet.getTxNonceChan(tx, options)
 

@@ -8,9 +8,7 @@ Send standard EOA (Externally Owned Account) transactions with configurable amou
 sudo sysctl -w net.ipv4.tcp_tw_reuse=1 
 sudo sysctl -w net.ipv4.ip_local_port_range="1024 65535"
 
-# run with skip receipts and disable block processing commented out to make sure wallets get funded
-# then run with those flags
-./bin/spamoor eoatx --privkey $PRIVATE_KEY --rpchost $RPC_URL -t 1280 --slot-duration 250ms --basefee-wei=110000 --tipfee-wei=1 --max-wallets 100000 --refill-amount-wei 20000020000000000 --refill-balance-wei 10000020000000000 --max-pending 8000 --gaslimit 100000000000 #--skip-receipts --disable-block-processing
+./bin/spamoor eoatx --privkey $PRIVATE_KEY --rpchost $RPC_URL -t 12800 --slot-duration 250ms --basefee-wei=110000 --tipfee-wei=1 --max-wallets 100000 --refill-amount-wei 20000020000000000 --refill-balance-wei 10000020000000000 --max-pending 8000 --gaslimit 100000000000 --skip-receipts --disable-block-processing
 ```
 
 ## Configuration

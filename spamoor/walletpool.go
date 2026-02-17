@@ -923,12 +923,19 @@ func (pool *WalletPool) processFundingRequests(fundingReqs []*FundingRequest) er
 			return fmt.Errorf("could not send funding txs: %w", err)
 		}
 
-		for _, receipt := range receipts {
-			if receipt != nil && receipt.Status == types.ReceiptStatusSuccessful {
-				batch, ok := batchTxMap[receipt.TxHash]
-				if ok {
-					for _, req := range batch {
-						req.Wallet.AddBalance(req.Amount.ToBig())
+		if pool.txpool.IsBlockProcessingDisabled() {
+			// Fire-and-forget mode: no receipts available, assume funding succeeded.
+			for _, req := range fundingReqs {
+				req.Wallet.AddBalance(req.Amount.ToBig())
+			}
+		} else {
+			for _, receipt := range receipts {
+				if receipt != nil && receipt.Status == types.ReceiptStatusSuccessful {
+					batch, ok := batchTxMap[receipt.TxHash]
+					if ok {
+						for _, req := range batch {
+							req.Wallet.AddBalance(req.Amount.ToBig())
+						}
 					}
 				}
 			}
