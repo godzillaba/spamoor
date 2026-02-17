@@ -132,7 +132,8 @@ func NewTxBatcher(txpool *TxPool) *TxBatcher {
 //   - wallet: wallet to deploy the contract from
 //   - client: optional client to use (if nil, uses pool's default client)
 //   - gasLimit: gas limit override for the deploy tx (uses 300000 if 0)
-func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client, gasLimit uint64) error {
+//   - gasPrice: gas price override for feeCap/tipCap (uses defaults if nil)
+func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client, gasLimit uint64, gasPrice *big.Int) error {
 	b.deployMtx.Lock()
 	defer b.deployMtx.Unlock()
 
@@ -167,15 +168,22 @@ func (b *TxBatcher) Deploy(ctx context.Context, wallet *Wallet, client *Client, 
 			return fmt.Errorf("no client available")
 		}
 	}
-	feeCap, tipCap, err := client.GetSuggestedFee(ctx)
-	if err != nil {
-		return err
-	}
-	if feeCap.Cmp(big.NewInt(400000000000)) < 0 {
-		feeCap = big.NewInt(400000000000)
-	}
-	if tipCap.Cmp(big.NewInt(200000000000)) < 0 {
-		tipCap = big.NewInt(200000000000)
+	var feeCap, tipCap *big.Int
+	if gasPrice != nil {
+		feeCap = new(big.Int).Set(gasPrice)
+		tipCap = new(big.Int).Set(gasPrice)
+	} else {
+		var err error
+		feeCap, tipCap, err = client.GetSuggestedFee(ctx)
+		if err != nil {
+			return err
+		}
+		if feeCap.Cmp(big.NewInt(400000000000)) < 0 {
+			feeCap = big.NewInt(400000000000)
+		}
+		if tipCap.Cmp(big.NewInt(200000000000)) < 0 {
+			tipCap = big.NewInt(200000000000)
+		}
 	}
 
 	txData, err := txbuilder.DynFeeTx(&txbuilder.TxMetadata{

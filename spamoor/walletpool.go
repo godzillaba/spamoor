@@ -45,6 +45,7 @@ type WalletPoolConfig struct {
 	RefillInterval  uint64       `yaml:"refill_interval"`
 	WalletSeed      string       `yaml:"seed"`
 	FundingGasLimit uint64       `yaml:"funding_gas_limit"`
+	FundingGasPrice *big.Int     `yaml:"funding_gas_price,omitempty"`
 }
 
 // WellKnownWalletConfig defines configuration for a named wallet with custom funding settings.
@@ -262,6 +263,39 @@ func (pool *WalletPool) GetFundingGasLimit() uint64 {
 		return 21000
 	}
 	return pool.config.FundingGasLimit
+}
+
+// SetFundingGasPrice sets the gas price (feeCap and tipCap) for funding transactions.
+func (pool *WalletPool) SetFundingGasPrice(price *big.Int) {
+	pool.config.FundingGasPrice = price
+}
+
+// getFundingFees returns feeCap and tipCap for funding transactions.
+// Uses FundingGasPrice if set, otherwise fetches suggested fees with caps.
+func (pool *WalletPool) getFundingFees(client *Client) (*big.Int, *big.Int, error) {
+	if pool.config.FundingGasPrice != nil {
+		price := new(big.Int).Set(pool.config.FundingGasPrice)
+		return price, new(big.Int).Set(price), nil
+	}
+
+	feeCap, tipCap, err := client.GetSuggestedFee(pool.ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if feeCap.Cmp(big.NewInt(100000000000)) > 0 {
+		feeCap = big.NewInt(100000000000) // 100 gwei
+	} else {
+		feeCap = feeCap.Add(feeCap, big.NewInt(2000000000)) // +2 gwei
+	}
+	if tipCap.Cmp(big.NewInt(100000000000)) > 0 {
+		tipCap = big.NewInt(100000000000) // 100 gwei
+	} else {
+		tipCap = tipCap.Add(tipCap, big.NewInt(100000000)) // +0.1 gwei
+	}
+	if tipCap.Cmp(feeCap) > 0 {
+		tipCap = new(big.Int).Set(feeCap)
+	}
+	return feeCap, tipCap, nil
 }
 
 // SetTransactionTracker sets the optional callback to track transaction results for metrics.
@@ -880,7 +914,7 @@ func (pool *WalletPool) processFundingRequests(fundingReqs []*FundingRequest) er
 		pool.logger.Infof("root wallet is locked, %s", reason)
 	}, func() error {
 		if batcher != nil {
-			err := batcher.Deploy(pool.ctx, pool.rootWallet.wallet, client, pool.GetFundingGasLimit())
+			err := batcher.Deploy(pool.ctx, pool.rootWallet.wallet, client, pool.GetFundingGasLimit(), pool.config.FundingGasPrice)
 			if err != nil {
 				return fmt.Errorf("failed to deploy batcher: %v", err)
 			}
@@ -947,23 +981,9 @@ func (pool *WalletPool) buildWalletFundingTx(childWallet *Wallet, client *Client
 			return nil, fmt.Errorf("no client available")
 		}
 	}
-	feeCap, tipCap, err := client.GetSuggestedFee(pool.ctx)
+	feeCap, tipCap, err := pool.getFundingFees(client)
 	if err != nil {
 		return nil, err
-	}
-	if feeCap.Cmp(big.NewInt(100000000000)) > 0 {
-		feeCap = big.NewInt(100000000000) // 100 gwei
-	} else {
-		feeCap = feeCap.Add(feeCap, big.NewInt(2000000000)) // +2 gwei
-	}
-	if tipCap.Cmp(big.NewInt(100000000000)) > 0 {
-		tipCap = big.NewInt(100000000000) // 100 gwei
-	} else {
-		tipCap = tipCap.Add(tipCap, big.NewInt(100000000)) // +0.1 gwei
-	}
-	// Ensure tipCap never exceeds feeCap (EIP-1559 requirement)
-	if tipCap.Cmp(feeCap) > 0 {
-		tipCap = new(big.Int).Set(feeCap)
 	}
 
 	toAddr := childWallet.GetAddress()
@@ -994,23 +1014,9 @@ func (pool *WalletPool) buildWalletFundingBatchTx(requests []*FundingRequest, cl
 			return nil, fmt.Errorf("no client available")
 		}
 	}
-	feeCap, tipCap, err := client.GetSuggestedFee(pool.ctx)
+	feeCap, tipCap, err := pool.getFundingFees(client)
 	if err != nil {
 		return nil, err
-	}
-	if feeCap.Cmp(big.NewInt(100000000000)) > 0 {
-		feeCap = big.NewInt(100000000000) // 100 gwei
-	} else {
-		feeCap = feeCap.Add(feeCap, big.NewInt(2000000000)) // +2 gwei
-	}
-	if tipCap.Cmp(big.NewInt(100000000000)) > 0 {
-		tipCap = big.NewInt(100000000000) // 100 gwei
-	} else {
-		tipCap = tipCap.Add(tipCap, big.NewInt(100000000)) // +0.1 gwei
-	}
-	// Ensure tipCap never exceeds feeCap (EIP-1559 requirement)
-	if tipCap.Cmp(feeCap) > 0 {
-		tipCap = new(big.Int).Set(feeCap)
 	}
 
 	totalAmount := uint256.NewInt(0)

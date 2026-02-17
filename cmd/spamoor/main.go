@@ -31,7 +31,8 @@ type CliArgs struct {
 	refillBalanceWei string
 	refillInterval   uint64
 	slotDuration     time.Duration
-	fundingGasLimit  uint64
+	fundingGasLimit uint64
+	fundingGasPrice string
 }
 
 func main() {
@@ -57,6 +58,7 @@ func main() {
 	flags.Uint64Var(&cliArgs.refillInterval, "refill-interval", 300, "Interval for child wallet rbalance check and refilling if needed (in sec).")
 	flags.DurationVar(&cliArgs.slotDuration, "slot-duration", 12*time.Second, "Duration of a slot/block for rate limiting (e.g., '12s', '250ms'). Use sub-second values for L2 chains.")
 	flags.Uint64Var(&cliArgs.fundingGasLimit, "funding-gas-limit", 21000, "Gas limit for wallet funding transactions (use 100000+ for L2s).")
+	flags.StringVar(&cliArgs.fundingGasPrice, "funding-gas-price", "", "Gas price in wei for funding transactions (sets both feeCap and tipCap).")
 
 	flags.Parse(os.Args)
 
@@ -201,6 +203,13 @@ func main() {
 	walletPool.SetRefillInterval(cliArgs.refillInterval)
 	walletPool.SetWalletSeed(cliArgs.seed)
 	walletPool.SetFundingGasLimit(cliArgs.fundingGasLimit)
+	if cliArgs.fundingGasPrice != "" {
+		price, ok := new(big.Int).SetString(cliArgs.fundingGasPrice, 10)
+		if !ok {
+			panic(fmt.Errorf("invalid funding-gas-price value: %s", cliArgs.fundingGasPrice))
+		}
+		walletPool.SetFundingGasPrice(price)
+	}
 
 	// init scenario
 	err = newScenario.Init(&scenario.Options{
