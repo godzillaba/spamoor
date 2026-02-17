@@ -134,41 +134,70 @@ func RunTransactionScenario(ctx context.Context, options TransactionScenarioOpti
 
 	// Subscribe to block updates for stats reporting
 	var lastSubmittedCount uint64
+	blockProcessingDisabled := false
 	if options.WalletPool != nil && options.WalletPool.GetTxPool() != nil {
 		txPool := options.WalletPool.GetTxPool()
-		subscriptionID := txPool.SubscribeToBlockUpdates(options.WalletPool, func(blockNumber uint64, walletPoolStats *spamoor.WalletPoolBlockStats) {
-			pendingCount := uint64(0)
-			submittedCount := uint64(0)
-			for _, wallet := range options.WalletPool.GetAllWallets() {
-				// Get pending count
-				pendingNonce := wallet.GetNonce()
-				confirmedNonce := wallet.GetConfirmedNonce()
-				if pendingNonce > confirmedNonce {
-					pendingCount += pendingNonce - confirmedNonce
+
+		// Check if block processing is disabled
+		blockProcessingDisabled = txPool.IsBlockProcessingDisabled()
+
+		if !blockProcessingDisabled {
+			subscriptionID := txPool.SubscribeToBlockUpdates(options.WalletPool, func(blockNumber uint64, walletPoolStats *spamoor.WalletPoolBlockStats) {
+				pendingCount := uint64(0)
+				submittedCount := uint64(0)
+				for _, wallet := range options.WalletPool.GetAllWallets() {
+					// Get pending count
+					pendingNonce := wallet.GetNonce()
+					confirmedNonce := wallet.GetConfirmedNonce()
+					if pendingNonce > confirmedNonce {
+						pendingCount += pendingNonce - confirmedNonce
+					}
+
+					// Get submitted count
+					submittedCount += wallet.GetSubmittedTxCount()
 				}
 
-				// Get submitted count
-				submittedCount += wallet.GetSubmittedTxCount()
+				submittedThisBlock := submittedCount - lastSubmittedCount
+				lastSubmittedCount = submittedCount
+
+				// Record confirmed transactions for this block
+				throughputTracker.recordCompletion(blockNumber, walletPoolStats.ConfirmedTxCount)
+
+				// Calculate average transactions per block over different ranges
+				throughput5B := throughputTracker.getAverageThroughput(5, blockNumber)
+				throughput20B := throughputTracker.getAverageThroughput(20, blockNumber)
+				throughput60B := throughputTracker.getAverageThroughput(60, blockNumber)
+
+				options.Logger.WithField("wallets", walletPoolStats.AffectedWallets).Infof(
+					"block %d: submitted=%d, pending=%d, confirmed=%d, throughput: 5B=%.2f tx/B, 20B=%.2f tx/B, 60B=%.2f tx/B",
+					blockNumber, submittedThisBlock, pendingCount, walletPoolStats.ConfirmedTxCount, throughput5B, throughput20B, throughput60B,
+				)
+			})
+
+			defer txPool.UnsubscribeFromBlockUpdates(subscriptionID)
+		}
+	}
+
+	// Periodic progress logging when block processing is disabled (fire-and-forget mode)
+	if blockProcessingDisabled {
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					submittedCount := uint64(0)
+					for _, wallet := range options.WalletPool.GetAllWallets() {
+						submittedCount += wallet.GetSubmittedTxCount()
+					}
+					pending := pendingCount.Load()
+					options.Logger.Infof("progress: submitted=%d, pending=%d (fire-and-forget mode)", submittedCount, pending)
+				case <-ctx.Done():
+					return
+				}
 			}
-
-			submittedThisBlock := submittedCount - lastSubmittedCount
-			lastSubmittedCount = submittedCount
-
-			// Record confirmed transactions for this block
-			throughputTracker.recordCompletion(blockNumber, walletPoolStats.ConfirmedTxCount)
-
-			// Calculate average transactions per block over different ranges
-			throughput5B := throughputTracker.getAverageThroughput(5, blockNumber)
-			throughput20B := throughputTracker.getAverageThroughput(20, blockNumber)
-			throughput60B := throughputTracker.getAverageThroughput(60, blockNumber)
-
-			options.Logger.WithField("wallets", walletPoolStats.AffectedWallets).Infof(
-				"block %d: submitted=%d, pending=%d, confirmed=%d, throughput: 5B=%.2f tx/B, 20B=%.2f tx/B, 60B=%.2f tx/B",
-				blockNumber, submittedThisBlock, pendingCount, walletPoolStats.ConfirmedTxCount, throughput5B, throughput20B, throughput60B,
-			)
-		})
-
-		defer txPool.UnsubscribeFromBlockUpdates(subscriptionID)
+		}()
 	}
 
 	if options.ThroughputIncrementInterval != 0 {

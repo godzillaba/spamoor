@@ -39,6 +39,7 @@ type ScenarioOptions struct {
 	SelfTxOnly   bool    `yaml:"self_tx_only"`
 	ClientGroup  string  `yaml:"client_group"`
 	LogTxs       bool    `yaml:"log_txs"`
+	SkipReceipts bool    `yaml:"skip_receipts"`
 }
 
 type Scenario struct {
@@ -66,6 +67,7 @@ var ScenarioDefaultOptions = ScenarioOptions{
 	SelfTxOnly:   false,
 	ClientGroup:  "",
 	LogTxs:       false,
+	SkipReceipts: false,
 }
 var ScenarioDescriptor = scenario.Descriptor{
 	Name:           ScenarioName,
@@ -101,6 +103,7 @@ func (s *Scenario) Flags(flags *pflag.FlagSet) error {
 	flags.BoolVar(&s.options.SelfTxOnly, "self-tx-only", ScenarioDefaultOptions.SelfTxOnly, "Only send transactions to self")
 	flags.StringVar(&s.options.ClientGroup, "client-group", ScenarioDefaultOptions.ClientGroup, "Client group to use for sending transactions")
 	flags.BoolVar(&s.options.LogTxs, "log-txs", ScenarioDefaultOptions.LogTxs, "Log all submitted transactions")
+	flags.BoolVar(&s.options.SkipReceipts, "skip-receipts", ScenarioDefaultOptions.SkipReceipts, "Skip waiting for transaction receipts (fire and forget mode)")
 	return nil
 }
 
@@ -204,9 +207,11 @@ func (s *Scenario) Run(ctx context.Context) error {
 				}
 			})
 
-			// wait for receipt
-			if _, err := receiptChan.Wait(ctx); err != nil {
-				return err
+			// wait for receipt (unless skip-receipts is enabled)
+			if !s.options.SkipReceipts {
+				if _, err := receiptChan.Wait(ctx); err != nil {
+					return err
+				}
 			}
 
 			return err
@@ -296,14 +301,19 @@ func (s *Scenario) sendTx(ctx context.Context, txIdx uint64) (scenario.ReceiptCh
 
 	receiptChan := make(scenario.ReceiptChan, 1)
 
-	err = s.walletPool.GetTxPool().SendTransaction(ctx, wallet, tx, &spamoor.SendTransactionOptions{
+	sendOpts := &spamoor.SendTransactionOptions{
 		Client:      client,
 		ClientGroup: s.options.ClientGroup,
-		Rebroadcast: s.options.Rebroadcast > 0,
+		Rebroadcast: s.options.Rebroadcast > 0 && !s.options.SkipReceipts,
 		OnComplete: func(tx *types.Transaction, receipt *types.Receipt, err error) {
 			receiptChan <- receipt
 		},
-		OnConfirm: func(tx *types.Transaction, receipt *types.Receipt) {
+		LogFn: spamoor.GetDefaultLogFn(s.logger, "", fmt.Sprintf("%6d", txIdx+1), tx),
+	}
+
+	// Only set OnConfirm callback if we're tracking receipts
+	if !s.options.SkipReceipts {
+		sendOpts.OnConfirm = func(tx *types.Transaction, receipt *types.Receipt) {
 			txFees := utils.GetTransactionFees(tx, receipt)
 			s.logger.WithField("rpc", client.GetName()).Debugf(
 				" transaction %d confirmed in block #%v. total fee: %v gwei (base: %v) logs: %v",
@@ -313,9 +323,10 @@ func (s *Scenario) sendTx(ctx context.Context, txIdx uint64) (scenario.ReceiptCh
 				txFees.TxBaseFeeGweiString(),
 				len(receipt.Logs),
 			)
-		},
-		LogFn: spamoor.GetDefaultLogFn(s.logger, "", fmt.Sprintf("%6d", txIdx+1), tx),
-	})
+		}
+	}
+
+	err = s.walletPool.GetTxPool().SendTransaction(ctx, wallet, tx, sendOpts)
 	if err != nil {
 		// mark nonce as skipped if tx was not sent
 		wallet.MarkSkippedNonce(tx.Nonce())

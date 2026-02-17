@@ -21,12 +21,13 @@ import (
 // sharedHTTPClient is reused across all RPC clients to enable TCP connection
 // pooling. Go's default MaxIdleConnsPerHost is 2, which forces a new TCP
 // connection for nearly every request under any concurrency. This transport
-// raises the per-host pool to 100, letting high-throughput callers (like
+// raises the per-host pool to 1000, letting high-throughput callers (like
 // transaction spammers) reuse connections instead of churning them.
 var sharedHTTPClient = &http.Client{
 	Transport: &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        1000,
+		MaxIdleConnsPerHost: 1000,
+		MaxConnsPerHost:     0, // No limit on total connections per host
 		IdleConnTimeout:     90 * time.Second,
 	},
 }
